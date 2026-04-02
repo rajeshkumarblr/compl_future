@@ -1,11 +1,15 @@
+#include <chrono>
 #include <deque>
 #include <filesystem>
 #include <functional>
 #include <future>
 #include <iostream>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
+using namespace std;
 namespace fs = std::filesystem;
 
 // 1. Define your input and output types
@@ -27,21 +31,12 @@ std::vector<MetaData> processBatch(const std::vector<File> &files,
                                    MapperFunc mapper, int maxFuturesInFlight) {
   std::vector<MetaData> results;
   std::deque<std::future<MetaData>> futures;
-  const size_t total = files.size();
-  size_t processed = 0;
 
   for (const auto &file : files) {
     // If we reach the limit of futures in flight, wait for the oldest one
     if (futures.size() >= static_cast<size_t>(maxFuturesInFlight)) {
       results.push_back(futures.front().get());
       futures.pop_front();
-      processed++;
-
-      // Progress reporting
-      if (processed % 100 == 0 || processed == total) {
-        std::cout << "\rProcessing: " << processed << "/" << total << " ("
-                  << (processed * 100 / total) << "%) " << std::flush;
-      }
     }
     // Launch a new future via the mapper
     futures.push_back(mapper(file));
@@ -51,9 +46,6 @@ std::vector<MetaData> processBatch(const std::vector<File> &files,
   while (!futures.empty()) {
     results.push_back(futures.front().get());
     futures.pop_front();
-    processed++;
-    std::cout << "\rProcessing: " << processed << "/" << total << " ("
-              << (processed * 100 / total) << "%) " << std::flush;
   }
   std::cout << "\nDone!" << std::endl;
 
@@ -61,9 +53,23 @@ std::vector<MetaData> processBatch(const std::vector<File> &files,
 }
 
 int main(int argc, char *argv[]) {
-  std::string root_path = "/home/rajesh";
+  std::string root_path = "/home/rajesh/proj/dlake";
   int maxInFlight = 10;
+  // 1. Define a truly generic print function using std::function
+  // This can be reassigned to ANY function/lambda with the same signature.
+  std::function<void(const std::string &)> print =
+      [](const std::string &message) {
+        std::cout << "[INFO] " << message << std::endl;
+      };
 
+  print("Starting the future process...");
+
+  // Example: Reassigning to a different "custom" function
+  print = [](const std::string &message) {
+    std::cout << ">>> CUSTOM LOG: " << message << std::endl;
+  };
+
+  print("Print behavior has been customized!");
   // 1. Handle command line arguments
   if (argc > 1) {
     root_path = argv[1];
@@ -111,11 +117,20 @@ int main(int argc, char *argv[]) {
 
   std::cout << "Found " << files_to_process.size() << " files." << std::endl;
 
+  std::vector<MetaData> myResults;
+  std::mutex resultsMutex;
+
   // 3. Define the mapper: gets the file size asynchronously
-  auto mapper = [](const File &f) -> std::future<MetaData> {
-    return std::async(std::launch::async, [f]() {
+  auto mapper = [&myResults,
+                 &resultsMutex](const File &f) -> std::future<MetaData> {
+    return std::async(std::launch::async, [&myResults, &resultsMutex, f]() {
       try {
-        return MetaData{f.name, fs::file_size(f.name)};
+        MetaData m = MetaData{f.name, fs::file_size(f.name)};
+        {
+          std::lock_guard<std::mutex> lock(resultsMutex);
+          myResults.push_back(m);
+        }
+        return m;
       } catch (...) {
         return MetaData{f.name, 0};
       }
@@ -126,8 +141,8 @@ int main(int argc, char *argv[]) {
   auto results = processBatch(files_to_process, mapper, maxInFlight);
 
   // 5. Print truncated results
-  std::cout << "\nSample Results (Top 10):" << std::endl;
-  for (size_t i = 0; i < results.size() && i < 10; ++i) {
+  std::cout << "\nResults:" << std::endl;
+  for (size_t i = 0; i < myResults.size(); ++i) {
     std::cout << "[" << i + 1 << "] " << results[i].filename << ": "
               << results[i].size << " bytes" << std::endl;
   }

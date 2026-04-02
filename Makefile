@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -pthread -std=c++20
+CXXFLAGS = -g -Wall -Wextra -pthread -std=c++20
 TARGET = future
 SRC = future.cpp
 
