@@ -1,9 +1,8 @@
-#include <chrono>
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <filesystem>
 #include <functional>
-#include <future>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -13,71 +12,7 @@
 
 namespace fs = std::filesystem;
 
-// 1. ThreadPool implementation
-class ThreadPool {
-public:
-  ThreadPool(size_t threads) : stop(false) {
-    for (size_t i = 0; i < threads; ++i) {
-      workers.emplace_back([this] {
-        for (;;) {
-          std::function<void()> task;
-          {
-            std::unique_lock<std::mutex> lock(this->queue_mutex);
-            this->condition.wait(
-                lock, [this] { return this->stop || !this->tasks.empty(); });
-            if (this->stop && this->tasks.empty())
-              return;
-            task = std::move(this->tasks.front());
-            this->tasks.pop();
-          }
-          task();
-        }
-      });
-    }
-  }
-
-  template <class F, class... Args>
-  auto enqueue(F &&f, Args &&...args)
-      -> std::future<typename std::invoke_result<F, Args...>::type> {
-    using return_type = typename std::invoke_result<F, Args...>::type;
-
-    auto task = std::make_shared<std::packaged_task<return_type()>>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...));
-
-    std::future<return_type> res = task->get_future();
-    {
-      std::unique_lock<std::mutex> lock(queue_mutex);
-
-      // don't allow enqueueing after stopping the pool
-      if (stop)
-        throw std::runtime_error("enqueue on stopped ThreadPool");
-
-      tasks.emplace([task]() { (*task)(); });
-    }
-    condition.notify_one();
-    return res;
-  }
-
-  ~ThreadPool() {
-    {
-      std::unique_lock<std::mutex> lock(queue_mutex);
-      stop = true;
-    }
-    condition.notify_all();
-    for (std::thread &worker : workers)
-      worker.join();
-  }
-
-private:
-  std::vector<std::thread> workers;
-  std::queue<std::function<void()>> tasks;
-
-  std::mutex queue_mutex;
-  std::condition_variable condition;
-  bool stop;
-};
-
-// 2. Data structures
+// 1. Specific Data structures
 struct File {
   std::string name;
 };
@@ -87,15 +22,84 @@ struct MetaData {
   uintmax_t size;
 };
 
+// 2. Simplified Thread Pool specific for File processing
+class FileProcessorPool {
+public:
+  // Constructor takes the number of worker threads and the specific worker function
+  FileProcessorPool(size_t threads, std::function<void(const File &)> worker)
+      : workerFunc(worker), activeTasks(0), stop(false) {
+    for (size_t i = 0; i < threads; ++i) {
+      workers.emplace_back([this] {
+        for (;;) {
+          File file;
+          {
+            std::unique_lock<std::mutex> lock(this->queue_mutex);
+            this->condition.wait(
+                lock, [this] { return this->stop || !this->files.empty(); });
+            if (this->stop && this->files.empty())
+              return;
+            file = std::move(this->files.front());
+            this->files.pop();
+          }
+          // Execute the specific worker function
+          workerFunc(file);
+          activeTasks--;
+          // Notify any thread waiting for all tasks to complete
+          completion_cv.notify_all();
+        }
+      });
+    }
+  }
+
+  // Simple method to push a file into the processing queue
+  void addFile(const File &f) {
+    {
+      std::unique_lock<std::mutex> lock(queue_mutex);
+      files.push(f);
+      activeTasks++;
+    }
+    condition.notify_one();
+  }
+
+  // Wait until all queued files have been processed
+  void waitForCompletion() {
+    std::unique_lock<std::mutex> lock(queue_mutex);
+    completion_cv.wait(lock, [this] { return files.empty() && activeTasks == 0; });
+  }
+
+  // Destructor stops all threads
+  ~FileProcessorPool() {
+    {
+      std::unique_lock<std::mutex> lock(queue_mutex);
+      stop = true;
+    }
+    condition.notify_all();
+    for (std::thread &worker : workers) {
+      if (worker.joinable())
+        worker.join();
+    }
+  }
+
+private:
+  std::function<void(const File &)> workerFunc;
+  std::vector<std::thread> workers;
+  std::queue<File> files;
+  std::atomic<int> activeTasks;
+
+  std::mutex queue_mutex;
+  std::condition_variable condition;
+  std::condition_variable completion_cv;
+  bool stop;
+};
+
 int main(int argc, char *argv[]) {
   std::string root_path = "/home/rajesh/proj/dlake";
   int numThreads = 10;
 
   // Generic print function
-  std::function<void(const std::string &)> print =
-      [](const std::string &message) {
-        std::cout << "[THREAD_POOL] " << message << std::endl;
-      };
+  auto print = [](const std::string &message) {
+    std::cout << "[POOL_V2] " << message << std::endl;
+  };
 
   if (argc > 1) {
     root_path = argv[1];
@@ -110,54 +114,57 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  print("Starting the Thread Pool process with " + std::to_string(numThreads) + " threads...");
+  print("Starting the Simplified Thread Pool process with " +
+        std::to_string(numThreads) + " threads...");
 
-  std::vector<File> files_to_process;
+  std::vector<File> files_to_scan;
   try {
     if (!fs::exists(root_path) || !fs::is_directory(root_path)) {
-      std::cerr << "Error: " << root_path << " is not a valid directory." << std::endl;
+      std::cerr << "Error: " << root_path << " is not a valid directory."
+                << std::endl;
       return 1;
     }
     for (const auto &entry : fs::recursive_directory_iterator(root_path)) {
       if (entry.is_regular_file()) {
-        files_to_process.push_back({entry.path().string()});
+        files_to_scan.push_back({entry.path().string()});
       }
     }
   } catch (const fs::filesystem_error &e) {
     std::cerr << "Error during traversal: " << e.what() << std::endl;
   }
 
-  if (files_to_process.empty()) {
+  if (files_to_scan.empty()) {
     print("No files found.");
     return 0;
   }
 
-  print("Found " + std::to_string(files_to_process.size()) + " files.");
+  print("Found " + std::to_string(files_to_scan.size()) + " files.");
 
-  ThreadPool pool(numThreads);
-  std::vector<std::future<MetaData>> futures;
   std::vector<MetaData> results;
   std::mutex resultsMutex;
 
-  for (const auto &file : files_to_process) {
-    futures.push_back(pool.enqueue([&results, &resultsMutex, file]() {
-      try {
-        MetaData m = MetaData{file.name, fs::file_size(file.name)};
-        {
-          std::lock_guard<std::mutex> lock(resultsMutex);
-          results.push_back(m);
-        }
-        return m;
-      } catch (...) {
-        return MetaData{file.name, 0};
-      }
-    }));
+  // 3. Define the specific worker function logic
+  auto workerLogic = [&](const File &file) {
+    try {
+      MetaData m = MetaData{file.name, fs::file_size(file.name)};
+      std::lock_guard<std::mutex> lock(resultsMutex);
+      results.push_back(m);
+    } catch (...) {
+      // Ignore errors
+    }
+  };
+
+  // 4. Initialize the pool with the specific worker
+  FileProcessorPool pool(numThreads, workerLogic);
+
+  // 5. Add all files to the pool
+  for (const auto &file : files_to_scan) {
+    pool.addFile(file);
   }
 
-  // Wait for all results
-  for (auto &f : futures) {
-    f.get();
-  }
+  // 6. Wait for all files to be processed
+  print("Processing files...");
+  pool.waitForCompletion();
 
   print("Processed all files.");
   std::cout << "\nResults (First 5):" << std::endl;
