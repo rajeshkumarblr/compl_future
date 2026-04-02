@@ -1,12 +1,16 @@
 CXX = g++
 CXXFLAGS = -g -Wall -Wextra -pthread -std=c++20
-TARGET = future
-SRC = future.cpp
+TARGETS = future thread_pool
+SRC_FUTURE = future.cpp
+SRC_THREAD_POOL = thread_pool.cpp
 
-all: $(TARGET)
+all: $(TARGETS)
 
-$(TARGET): $(SRC)
-	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET)
+future: $(SRC_FUTURE)
+	$(CXX) $(CXXFLAGS) $(SRC_FUTURE) -o future
+
+thread_pool: $(SRC_THREAD_POOL)
+	$(CXX) $(CXXFLAGS) $(SRC_THREAD_POOL) -o thread_pool
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGETS)
