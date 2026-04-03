@@ -3,4 +3,5 @@ my_prod_cons
 thread_pool
 async_producer
 bounded_queue
+file_mapper
 *.o

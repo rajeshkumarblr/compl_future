@@ -1,11 +1,12 @@
 CXX = g++-14
 CXXFLAGS = -g -Wall -Wextra -pthread -std=c++23
-TARGETS = future thread_pool my_prod_cons async_producer bounded_queue
+TARGETS = future thread_pool my_prod_cons async_producer bounded_queue file_mapper
 SRC_FUTURE = future.cpp
 SRC_THREAD_POOL = thread_pool.cpp
 SRC_MY_PROD_CONS = my_prod_cons.cpp
 SRC_ASYNC_PRODUCER = async_producer.cpp
 SRC_BOUNDED_QUEUE = bounded_queue.cpp
+SRC_FILE_MAPPER = file_mapper.cpp
 
 all: $(TARGETS)
 
@@ -23,6 +24,9 @@ async_producer: $(SRC_ASYNC_PRODUCER)
 
 bounded_queue: $(SRC_BOUNDED_QUEUE)
 	$(CXX) $(CXXFLAGS) $(SRC_BOUNDED_QUEUE) -o bounded_queue
+
+file_mapper: $(SRC_FILE_MAPPER)
+	$(CXX) $(CXXFLAGS) $(SRC_FILE_MAPPER) -o file_mapper
 
 clean:
 	rm -f $(TARGETS)
