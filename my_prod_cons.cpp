@@ -1,18 +1,22 @@
 #include <chrono>
 #include <condition_variable>
+#include <format>
 #include <functional>
 #include <future>
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <print>
 #include <queue>
 #include <random>
+#include <ranges>
 #include <thread>
+#include <vector>
 
 using namespace std;
 using namespace std::chrono_literals;
 
-queue<int> q;
+std::queue<int> q;
 mutex m;
 condition_variable queue_full, queue_empty;
 using prodFunc = std::function<int()>;
@@ -81,9 +85,22 @@ public:
   }
 };
 
+// Do NOT do this in production!
+template <typename T>
+std::ostream &operator<<(std::ostream &os, const std::vector<T> &v) {
+  os << "[";
+  if (!v.empty()) {
+    os << v[0];
+    for (size_t i = 1; i < v.size(); ++i) {
+      os << ", " << v[i];
+    }
+  }
+  return os << "]";
+}
+
 int main() {
-  std::mt19937 prodGen{std::random_device{}()};
-  std::mt19937 consGen{std::random_device{}()};
+  std::mt19937 prodGen(std::random_device{}());
+  std::mt19937 consGen(std::random_device{}());
   std::uniform_int_distribution<> disProd(50, 200);
   std::uniform_int_distribution<> disProdVal(1, 100);
   std::uniform_int_distribution<> disCons(100, 300);
@@ -114,11 +131,6 @@ int main() {
   consumer.join();
 
   // print the vector.
-  cout << "myvec: [ ";
-  for (int val : myVec) {
-    cout << val << ", ";
-  }
-  cout << "\b\b";
-  cout << " ]\n";
+  cout << myVec;
   return 0;
 }
