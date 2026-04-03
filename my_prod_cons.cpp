@@ -80,18 +80,7 @@ public:
   }
 };
 
-// Do NOT do this in production!
-template <typename T>
-std::ostream &operator<<(std::ostream &os, const std::vector<T> &v) {
-  os << "[";
-  if (!v.empty()) {
-    os << v[0];
-    for (size_t i = 1; i < v.size(); ++i) {
-      os << ", " << v[i];
-    }
-  }
-  return os << "]";
-}
+#include "print_utils.h"
 
 int main() {
   std::mt19937 prodGen(std::random_device{}());
