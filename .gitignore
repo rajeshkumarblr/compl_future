@@ -1,4 +1,6 @@
 future
 my_prod_cons
 thread_pool
+async_producer
+bounded_queue
 *.o
