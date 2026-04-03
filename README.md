@@ -1,54 +1,45 @@
-# Future File Processor
+# Future File Processor & Concurrency Lab
 
-A high-performance asynchronous file metadata processor in C++20 using `std::future` and `std::async`.
+A collection of high-performance asynchronous and concurrency patterns in C++23.
 
 ## Overview
 
-This project demonstrates how to efficiently process a large number of files by leveraging C++ concurrency features. It traverses a directory recursively, collects file metadata (filenames and sizes), and prints the results.
+This project demonstrates various concurrency patterns in modern C++, ranging from asynchronous file processing to thread-safe data structures and producer-consumer implementations.
 
 ## Implementations
 
-The project provides two different implementations for asynchronous file processing:
+### 1. Asynchronous File Processing
+- **`future.cpp`**: Uses `std::async` with a sliding window pattern to process file metadata.
+- **`thread_pool.cpp`**: Custom thread pool implementation for high-throughput file processing.
 
-### 1. Future-based Implementation (`future.cpp`)
-- Uses `std::async` to launch tasks.
-- Implements a **Sliding Window** pattern to limit concurrency manually.
-- Simpler implementation but less control over the underlying thread pool (handles task scheduling via the OS/Standard Library).
-
-### 2. Thread Pool Implementation (`thread_pool.cpp`)
-- Implements a custom **ThreadPool** class.
-- Uses a fixed number of worker threads and a task queue.
-- More efficient for high-throughput tasks as it reuses threads rather than creating/destroying them.
-- Provides better control over system resource usage.
+### 2. Producer-Consumer Patterns
+- **`my_prod_cons.cpp`**: A decoupled producer-consumer implementation where production and consumption logic are passed as lambdas.
+- **`bounded_queue.cpp`**: A generic, thread-safe `BoundedQueue<T>` implementation using templates and `std::optional` for clean termination.
+- **`async_producer.cpp`**: A simple example of using `std::async` to return a container from a task.
 
 ## Build and Run
 
+### Requirements
+- **Compiler**: `g++-14` or later (for C++23 support).
+- **Standard**: C++23.
+
 ### Compiling
-Run the following command to build both versions:
+Run the following command to build all targets:
 ```bash
 make
 ```
 
 ### Running
-
-To run the future version:
+Each target can be run independently:
 ```bash
-./future [path] [concurrency_limit]
-```
-
-To run the thread pool version:
-```bash
-./thread_pool [path] [thread_count]
-```
-
-Example:
-```bash
-./thread_pool /home/rajesh/proj/future 5
+./future [path] [concurrency]
+./thread_pool [path] [threads]
+./my_prod_cons
+./bounded_queue
+./async_producer
 ```
 
 ## Project Structure
-
-- `future.cpp`: Core logic and entry point.
-- `Makefile`: Build configuration.
-- `MetaData`: Data structure for file information.
-- `processBatch`: Generic sliding window implementation for future management.
+- `Makefile`: Centralized build system for all components.
+- `.gitignore`: Configured to ignore binary artifacts.
+- `*.cpp`: Individual concurrency pattern implementations.
