@@ -1,4 +1,5 @@
 #include "BoundedQueue.h"
+#include "print_utils.h"
 #include <chrono>
 #include <iostream>
 #include <random>
@@ -7,8 +8,6 @@
 
 using namespace std;
 using namespace std::chrono_literals;
-
-#include "print_utils.h"
 
 int main() {
 
